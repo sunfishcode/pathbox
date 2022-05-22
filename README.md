@@ -84,7 +84,7 @@ many situations than adding out-of-band `--dir=` arguments to the Wasm
 runtime.
 
 And it eliminates the temptation to do `--dir=.` or `--dir=/`, which
-which largely disable the sandbox.
+largely disable the sandbox.
 
 The goal is to make sandboxing convenient enough that people can just
 use it, without having it be something they have to opt into, or
