@@ -111,7 +111,7 @@ There are a few potential ways to approach this:
 
  - Writing a filename into a file is making an assumption, that readers
    of the file will have the same namespace as the writer. Where we're
-   going, this will be an increasingly likely situation, and so it's
+   going, this will be an increasingly unreliable assumption, so it's
    worth pushing back on applications and asking whether this is something
    they really need to do.
 
