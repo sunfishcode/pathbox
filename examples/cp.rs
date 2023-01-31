@@ -1,5 +1,5 @@
+use preopener::{exit, Level, MagicLevel, Preopener, Status};
 use std::io;
-use preopener::{exit, Level, MagicLevel, Preopens, Status};
 
 fn main() {
     // Set up the arguments and environment variables. This is the part a
@@ -12,9 +12,9 @@ fn main() {
     // Print out the arguments before translation.
     eprintln!(">>> external args: {:?}", args);
 
-    let mut preopens = Preopens::new(MagicLevel::Auto);
-    let args = preopens.process_args_os(args.into_iter()).unwrap();
-    let _vars = preopens.process_vars_os(std::env::vars_os()).unwrap();
+    let mut preopener = Preopener::new(MagicLevel::Auto);
+    let args = preopener.process_args_os(args.into_iter()).unwrap();
+    let _vars = preopener.process_vars_os(std::env::vars_os()).unwrap();
 
     // Print out the arguments after translation.
     eprintln!(">>> internal args: {:?}", args);
@@ -46,11 +46,11 @@ fn main() {
         }
     };
 
-    let mut input = match preopens.open(&src) {
+    let mut input = match preopener.open(&src) {
         Ok(f) => f,
         Err(e) => {
             // Use `log` instead of stderr.
-            preopens.log(
+            preopener.log(
                 Level::Error,
                 "stderr",
                 &format!("Error: cannot open file '{}': {:?}", src, e),
@@ -58,11 +58,11 @@ fn main() {
             exit(Status::Failure);
         }
     };
-    let mut output = match preopens.create(&dst) {
+    let mut output = match preopener.create(&dst) {
         Ok(f) => f,
         Err(e) => {
             // Use `log` instead of stderr.
-            preopens.log(
+            preopener.log(
                 Level::Error,
                 "stderr",
                 &format!("Error: cannot open file '{}': {:?}", dst, e),

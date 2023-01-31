@@ -8,7 +8,7 @@ use std::io;
 
 /// The level of path inference that should be performed.
 ///
-/// The `Preopens` facility is capable of recognizing a variety of path
+/// The `Preopener` facility is capable of recognizing a variety of path
 /// strings automatically, which can be very convenient for basic command-line
 /// usage.
 ///
@@ -37,13 +37,13 @@ pub enum MagicLevel {
 }
 
 /// A set of preopens which isolates external paths from internal paths.
-pub struct Preopens {
+pub struct Preopener {
     magic_level: MagicLevel,
     preopens: Vec<Preopen>,
 }
 
-impl Preopens {
-    /// Construct a new empty instance of `Preopens`.
+impl Preopener {
+    /// Construct a new empty instance of `Preopener`.
     pub fn new(magic_level: MagicLevel) -> Self {
         Self {
             magic_level,
@@ -877,20 +877,20 @@ mod test {
     }
 
     fn do_process(arg: &str) -> Result<Process, Error> {
-        let mut preopens = Preopens::new(MagicLevel::Auto);
-        let arg = preopens.process_args([arg.to_owned()].into_iter())?;
+        let mut preopener = Preopener::new(MagicLevel::Auto);
+        let arg = preopener.process_args([arg.to_owned()].into_iter())?;
         Ok(Process {
             arg: arg[0].clone(),
-            preopens: preopens.as_slice().to_vec(),
+            preopens: preopener.as_slice().to_vec(),
         })
     }
 
     fn do_process_os(arg: &OsStr) -> Result<Process, Error> {
-        let mut preopens = Preopens::new(MagicLevel::Auto);
-        let arg = preopens.process_args_os([arg.to_owned()].into_iter())?;
+        let mut preopener = Preopener::new(MagicLevel::Auto);
+        let arg = preopener.process_args_os([arg.to_owned()].into_iter())?;
         Ok(Process {
             arg: arg[0].clone(),
-            preopens: preopens.as_slice().to_vec(),
+            preopens: preopener.as_slice().to_vec(),
         })
     }
 

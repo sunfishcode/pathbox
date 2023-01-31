@@ -1,7 +1,7 @@
+use preopener::{MagicLevel, Preopener};
 use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Read, Write};
-use preopener::{MagicLevel, Preopens};
 
 #[test]
 fn copy() {
@@ -16,8 +16,8 @@ fn copy() {
         OsString::from(real_input_name.clone()),
         OsString::from(real_output_name.clone()),
     ];
-    let mut preopens = Preopens::new(MagicLevel::Auto);
-    let args = preopens.process_args_os(args.into_iter()).unwrap();
+    let mut preopener = Preopener::new(MagicLevel::Auto);
+    let args = preopener.process_args_os(args.into_iter()).unwrap();
 
     let input_name = &args[0];
     let output_name = &args[1];
@@ -26,8 +26,8 @@ fn copy() {
     assert!(!input_name.contains(&real_input_name.to_str().unwrap()));
     assert!(!output_name.contains(&real_output_name.to_str().unwrap()));
 
-    let mut input = preopens.open(input_name).unwrap();
-    let mut output = preopens.create(output_name).unwrap();
+    let mut input = preopener.open(input_name).unwrap();
+    let mut output = preopener.create(output_name).unwrap();
 
     io::copy(&mut input, &mut output).unwrap();
 
@@ -52,8 +52,8 @@ fn copy_fail_no_magic() {
         OsString::from(real_input_name.clone()),
         OsString::from(real_output_name.clone()),
     ];
-    let mut preopens = Preopens::new(MagicLevel::None);
-    let args = preopens.process_args_os(args.into_iter()).unwrap();
+    let mut preopener = Preopener::new(MagicLevel::None);
+    let args = preopener.process_args_os(args.into_iter()).unwrap();
 
     let input_name = &args[0];
     let output_name = &args[1];
@@ -64,11 +64,11 @@ fn copy_fail_no_magic() {
 
     // Everything fails.
     assert_eq!(
-        preopens.open(input_name).unwrap_err().kind(),
+        preopener.open(input_name).unwrap_err().kind(),
         io::ErrorKind::PermissionDenied
     );
     assert_eq!(
-        preopens.create(output_name).unwrap_err().kind(),
+        preopener.create(output_name).unwrap_err().kind(),
         io::ErrorKind::PermissionDenied
     );
 }
@@ -87,8 +87,8 @@ fn copy_fail_no_writeability() {
         OsString::from(real_input_name.clone()),
         OsString::from(real_output_name.clone()),
     ];
-    let mut preopens = Preopens::new(MagicLevel::Readonly);
-    let args = preopens.process_args_os(args.into_iter()).unwrap();
+    let mut preopener = Preopener::new(MagicLevel::Readonly);
+    let args = preopener.process_args_os(args.into_iter()).unwrap();
 
     let input_name = &args[0];
     let output_name = &args[1];
@@ -98,9 +98,9 @@ fn copy_fail_no_writeability() {
     assert!(!output_name.contains(&real_output_name.to_str().unwrap()));
 
     // In readonly mode we can open the input but opening the output fails.
-    let _input = preopens.open(input_name).unwrap();
+    let _input = preopener.open(input_name).unwrap();
     assert_eq!(
-        preopens.create(output_name).unwrap_err().kind(),
+        preopener.create(output_name).unwrap_err().kind(),
         io::ErrorKind::PermissionDenied
     );
 }

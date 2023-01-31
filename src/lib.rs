@@ -1,9 +1,9 @@
 mod exit;
 mod log;
-mod preopens;
+mod preopener;
 mod writer;
 
+pub use crate::preopener::{Error, MagicLevel, Preopener};
 pub use exit::{exit, Status};
 pub use log::{log, Level};
-pub use preopens::{Error, MagicLevel, Preopens};
 pub use writer::Writer;

@@ -1,37 +1,37 @@
 //! TODO: The implementation here is extremely primitive and unoptimized.
 
-use crate::Preopens;
+use crate::Preopener;
 use std::io;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 
-pub(crate) fn stdout(preopens: &Preopens) -> Writer<'_> {
-    Writer::new(preopens, Box::new(std::io::stdout()))
+pub(crate) fn stdout(preopener: &Preopener) -> Writer<'_> {
+    Writer::new(preopener, Box::new(std::io::stdout()))
 }
 
-pub(crate) fn stderr(preopens: &Preopens) -> Writer<'_> {
-    Writer::new(preopens, Box::new(std::io::stderr()))
+pub(crate) fn stderr(preopener: &Preopener) -> Writer<'_> {
+    Writer::new(preopener, Box::new(std::io::stderr()))
 }
 
-/// A standard-output stream that's linked to an [`Preopens`] and translates
+/// A standard-output stream that's linked to a [`Preopener`] and translates
 /// preopens back into their external presentation.
 pub struct Writer<'a> {
-    preopens: &'a Preopens,
+    preopener: &'a Preopener,
     inner: Box<dyn io::Write>,
     buf: Vec<u8>,
 }
 
 impl<'a> Writer<'a> {
-    fn new(preopens: &'a Preopens, inner: Box<dyn io::Write>) -> Self {
+    fn new(preopener: &'a Preopener, inner: Box<dyn io::Write>) -> Self {
         Self {
-            preopens,
+            preopener,
             inner,
             buf: Vec::new(),
         }
     }
 
     fn replace_preopens(&mut self) {
-        for preopen in self.preopens.as_slice() {
+        for preopen in self.preopener.as_slice() {
             while let Some((before, after)) = is_subsequence(preopen.uuid.as_bytes(), &self.buf) {
                 let after = self.buf[after..].to_vec();
                 self.buf.resize(before, 0);
