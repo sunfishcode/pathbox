@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 /// The level of path inference that should be performed.
 ///
-/// The `Preopener` facility is capable of recognizing a variety of path
+/// The `Pathbox` facility is capable of recognizing a variety of path
 /// strings automatically, which can be very convenient for basic command-line
 /// usage.
 ///
@@ -22,7 +22,7 @@ use std::path::PathBuf;
 /// explicitness they wish to use.
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub enum MagicLevel {
-    /// No magic. No preopens are produced and no strings are translated.
+    /// No magic. No grants are produced and no strings are translated.
     None,
 
     /// Interpret `%`-prefixed special arguments, but do nothing else.
@@ -37,18 +37,18 @@ pub enum MagicLevel {
     Auto,
 }
 
-/// A set of preopens which isolates external paths from internal paths.
-pub struct Preopener {
+/// A utility for isolating external paths from internal paths.
+pub struct Pathbox {
     magic_level: MagicLevel,
-    preopens: Vec<Preopen>,
+    grants: Vec<Grant>,
 }
 
-impl Preopener {
-    /// Construct a new empty instance of `Preopener`.
+impl Pathbox {
+    /// Construct a new empty instance of `Pathbox`.
     pub fn new(magic_level: MagicLevel) -> Self {
         Self {
             magic_level,
-            preopens: Vec::new(),
+            grants: Vec::new(),
         }
     }
 
@@ -147,18 +147,18 @@ impl Preopener {
     /// returns the translated path that can be opened with ambient
     /// authority.
     pub fn host_path(&self, path: &str, access: Access) -> io::Result<PathBuf> {
-        for preopen in &self.preopens {
-            if preopen.access != Access::Any && !preopen.access.includes(access) {
+        for grant in &self.grants {
+            if grant.access != Access::Any && !grant.access.includes(access) {
                 continue;
             }
-            if let Some(rest) = path.strip_prefix(&preopen.guest) {
-                let mut path = preopen.original.clone();
+            if let Some(rest) = path.strip_prefix(&grant.guest) {
+                let mut path = grant.original.clone();
                 path.push(rest);
                 return Ok(path.into());
             }
         }
 
-        Err(self.preopen_search_failed(path))
+        Err(self.search_failed(path))
     }
 
     /// Open a file given an internal filename.
@@ -195,10 +195,10 @@ impl Preopener {
         DirView::open_ambient_dir(&full_path, ViewKind::Full, ambient_authority())
     }
 
-    fn preopen_search_failed(&self, path: &str) -> io::Error {
+    fn search_failed(&self, path: &str) -> io::Error {
         // Attempt to provide a more detailed error message.
-        for preopen in &self.preopens {
-            let access = match preopen.access {
+        for grant in &self.grants {
+            let access = match grant.access {
                 Access::Read => "read",
                 Access::Write => "write",
                 Access::Append => "append",
@@ -206,21 +206,15 @@ impl Preopener {
                 Access::MutableDir => "read/write directory",
                 Access::Any => continue,
             };
-            if let Some(_rest) = path.strip_prefix(&preopen.guest) {
+            if let Some(_rest) = path.strip_prefix(&grant.guest) {
                 return io::Error::new(
                     io::ErrorKind::PermissionDenied,
-                    format!(
-                        "Preopen '{:?}' only permits {:?} access",
-                        preopen.guest, access
-                    ),
+                    format!("Grant '{:?}' only permits {:?} access", grant.guest, access),
                 );
             }
         }
 
-        io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "File is not available as a preopen",
-        )
+        io::Error::new(io::ErrorKind::PermissionDenied, "File is not available")
     }
 
     /// Return a standard-output stream which translates any internal filenames
@@ -241,7 +235,7 @@ impl Preopener {
         log(&mut self.stderr(), level, context, message)
     }
 
-    /// Replace any paths in `arg` with random UUIDs, and populate `preopens`
+    /// Replace any paths in `arg` with random UUIDs, and populate `self`
     /// with information about the replacements.
     fn process_os(&mut self, arg: OsString) -> Result<String, Error> {
         match arg.into_string() {
@@ -270,7 +264,7 @@ impl Preopener {
         }
     }
 
-    /// Replace any paths in `arg` with random UUIDs, and populate `preopens`
+    /// Replace any paths in `arg` with random UUIDs, and populate `self`
     /// with information about the replacements.
     fn process(&mut self, arg: String) -> Result<String, Error> {
         // Leading '%' is an escape to allow for special features.
@@ -348,30 +342,30 @@ impl Preopener {
     fn replace_with_uuid(&mut self, s: &str, access: Access) -> String {
         let (_base, ext) = split_extension(s);
 
-        let guest = format!("wasi-preopen.{}{}", uuid::Uuid::new_v4(), ext);
-        let preopen = Preopen {
+        let guest = format!("guest-path.{}{}", uuid::Uuid::new_v4(), ext);
+        let grant = Grant {
             guest: guest.clone(),
             original: s.to_owned().into(),
             access,
         };
-        self.preopens.push(preopen);
+        self.grants.push(grant);
         guest
     }
 
     #[cfg(unix)]
     fn replace_os_with_uuid(&mut self, s: &OsStr, access: Access) -> String {
-        let guest = format!("wasi-preopen.{}", uuid::Uuid::new_v4());
-        let preopen = Preopen {
+        let guest = format!("guest-path.{}", uuid::Uuid::new_v4());
+        let grant = Grant {
             guest: guest.clone(),
             original: s.to_owned(),
             access,
         };
-        self.preopens.push(preopen);
+        self.grants.push(grant);
         guest
     }
 
-    pub(crate) fn as_slice(&self) -> &[Preopen] {
-        &self.preopens
+    pub(crate) fn as_slice(&self) -> &[Grant] {
+        &self.grants
     }
 }
 
@@ -394,11 +388,11 @@ impl std::fmt::Display for Error {
 
 /// A record of a name which has been replaced.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Preopen {
-    /// The replacement string.
+pub struct Grant {
+    /// The replacement string to present to the guest.
     pub guest: String,
 
-    /// The preopened resource.
+    /// The original string to use in the host.
     pub original: OsString,
 
     /// How the file may be accessed.
@@ -871,33 +865,33 @@ mod test {
     #[derive(Eq, PartialEq, Debug)]
     struct Process {
         arg: String,
-        preopens: Vec<Preopen>,
+        grants: Vec<Grant>,
     }
 
     impl Process {
-        fn new(arg: &str, preopens: &[Preopen]) -> Self {
+        fn new(arg: &str, grants: &[Grant]) -> Self {
             Self {
                 arg: arg.to_owned(),
-                preopens: preopens.to_vec(),
+                grants: grants.to_vec(),
             }
         }
     }
 
     fn do_process(arg: &str) -> Result<Process, Error> {
-        let mut preopener = Preopener::new(MagicLevel::Auto);
-        let arg = preopener.process_args([arg.to_owned()].into_iter())?;
+        let mut pathbox = Pathbox::new(MagicLevel::Auto);
+        let arg = pathbox.process_args([arg.to_owned()].into_iter())?;
         Ok(Process {
             arg: arg[0].clone(),
-            preopens: preopener.as_slice().to_vec(),
+            grants: pathbox.as_slice().to_vec(),
         })
     }
 
     fn do_process_os(arg: &OsStr) -> Result<Process, Error> {
-        let mut preopener = Preopener::new(MagicLevel::Auto);
-        let arg = preopener.process_args_os([arg.to_owned()].into_iter())?;
+        let mut pathbox = Pathbox::new(MagicLevel::Auto);
+        let arg = pathbox.process_args_os([arg.to_owned()].into_iter())?;
         Ok(Process {
             arg: arg[0].clone(),
-            preopens: preopener.as_slice().to_vec(),
+            grants: pathbox.as_slice().to_vec(),
         })
     }
 
@@ -921,9 +915,9 @@ mod test {
         ];
         for arg in args {
             let p = do_process_os(OsStr::from_bytes(arg)).unwrap();
-            assert_eq!(p.preopens.len(), 1);
-            assert_eq!(p.arg, p.preopens[0].guest);
-            assert_eq!(p.preopens[0].original, OsStr::from_bytes(arg));
+            assert_eq!(p.grants.len(), 1);
+            assert_eq!(p.arg, p.grants[0].guest);
+            assert_eq!(p.grants[0].original, OsStr::from_bytes(arg));
         }
     }
 
@@ -983,7 +977,7 @@ mod test {
 
             let result = do_process(arg).unwrap();
             assert_ne!(arg, result.arg);
-            assert!(!result.preopens.is_empty());
+            assert!(!result.grants.is_empty());
         }
     }
 
@@ -1010,9 +1004,9 @@ mod test {
         ];
         for arg in args {
             let p = do_process(arg).unwrap();
-            assert_eq!(p.preopens.len(), 1);
-            assert_eq!(p.arg, p.preopens[0].guest);
-            assert_eq!(p.preopens[0].original, arg);
+            assert_eq!(p.grants.len(), 1);
+            assert_eq!(p.arg, p.grants[0].guest);
+            assert_eq!(p.grants[0].original, arg);
             assert_eq!(
                 do_process(&("%verbatim:".to_owned() + arg)),
                 Ok(Process::new(arg, &[]))
@@ -1023,23 +1017,23 @@ mod test {
     #[test]
     fn test_colon_separated() {
         let p = do_process("/:/").unwrap();
-        assert_eq!(p.preopens.len(), 2);
+        assert_eq!(p.grants.len(), 2);
         assert_eq!(
             p.arg,
-            format!("{}:{}", p.preopens[0].guest, p.preopens[1].guest)
+            format!("{}:{}", p.grants[0].guest, p.grants[1].guest)
         );
-        assert_eq!(p.preopens[0].original, "/");
-        assert_eq!(p.preopens[1].original, "/");
+        assert_eq!(p.grants[0].original, "/");
+        assert_eq!(p.grants[1].original, "/");
         assert_eq!(do_process("%verbatim:/:/"), Ok(Process::new("/:/", &[])));
 
         let p = do_process("./foo:./bar").unwrap();
-        assert_eq!(p.preopens.len(), 2);
+        assert_eq!(p.grants.len(), 2);
         assert_eq!(
             p.arg,
-            format!("{}:{}", p.preopens[0].guest, p.preopens[1].guest)
+            format!("{}:{}", p.grants[0].guest, p.grants[1].guest)
         );
-        assert_eq!(p.preopens[0].original, "./foo");
-        assert_eq!(p.preopens[1].original, "./bar");
+        assert_eq!(p.grants[0].original, "./foo");
+        assert_eq!(p.grants[1].original, "./bar");
         assert_eq!(
             do_process("%verbatim:./foo:./bar"),
             Ok(Process::new("./foo:./bar", &[]))
@@ -1063,7 +1057,7 @@ mod test {
             p.arg,
             format!(
                 "{}:{}:{}",
-                p.preopens[0].guest, p.preopens[1].guest, p.preopens[2].guest
+                p.grants[0].guest, p.grants[1].guest, p.grants[2].guest
             )
         );
     }
@@ -1073,9 +1067,9 @@ mod test {
         let p = do_process("--input=/foo").unwrap();
         assert!(p.arg.starts_with("--input="));
         assert!(!p.arg.ends_with("/foo"));
-        assert_eq!(p.preopens.len(), 1);
-        assert_eq!(p.arg, format!("--input={}", p.preopens[0].guest));
-        assert_eq!(p.preopens[0].original, "/foo");
+        assert_eq!(p.grants.len(), 1);
+        assert_eq!(p.arg, format!("--input={}", p.grants[0].guest));
+        assert_eq!(p.grants[0].original, "/foo");
         assert_eq!(
             do_process("%verbatim:--input=/foo"),
             Ok(Process::new("--input=/foo", &[]))

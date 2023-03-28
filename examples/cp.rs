@@ -1,4 +1,4 @@
-use preopener::{exit, Level, MagicLevel, Preopener, Status};
+use pathbox::{exit, Level, MagicLevel, Pathbox, Status};
 use std::io;
 
 fn main() {
@@ -12,9 +12,9 @@ fn main() {
     // Print out the arguments before translation.
     eprintln!(">>> external args: {:?}", args);
 
-    let mut preopener = Preopener::new(MagicLevel::Auto);
-    let args = preopener.process_args_os(args.into_iter()).unwrap();
-    let _vars = preopener.process_vars_os(std::env::vars_os()).unwrap();
+    let mut pathbox = Pathbox::new(MagicLevel::Auto);
+    let args = pathbox.process_args_os(args.into_iter()).unwrap();
+    let _vars = pathbox.process_vars_os(std::env::vars_os()).unwrap();
 
     // Print out the arguments after translation.
     eprintln!(">>> internal args: {:?}", args);
@@ -46,11 +46,11 @@ fn main() {
         }
     };
 
-    let mut input = match preopener.open(src) {
+    let mut input = match pathbox.open(src) {
         Ok(f) => f,
         Err(e) => {
             // Use `log` instead of stderr.
-            preopener.log(
+            pathbox.log(
                 Level::Error,
                 "stderr",
                 &format!("Error: cannot open file '{}': {}", src, e),
@@ -58,11 +58,11 @@ fn main() {
             exit(Status::Failure);
         }
     };
-    let mut output = match preopener.create(dst) {
+    let mut output = match pathbox.create(dst) {
         Ok(f) => f,
         Err(e) => {
             // Use `log` instead of stderr.
-            preopener.log(
+            pathbox.log(
                 Level::Error,
                 "stderr",
                 &format!("Error: cannot open file '{}': {}", dst, e),

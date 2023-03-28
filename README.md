@@ -43,7 +43,7 @@ $ echo "Avoid implicit dependencies" > file.silly!
 $ cargo run --quiet --example grep dep file.silly!
 >>> external args: ["dep", "file.silly!"]
 >>> internal args: ["dep", "file.silly!"]
-Error: cannot open file 'file.silly!': Custom { kind: PermissionDenied, error: "File is not available as a preopen" }
+[ERROR stderr] Error: cannot open file 'file.silly!': File is not available
 $
 ```
 
@@ -59,7 +59,7 @@ $ cargo run --quiet --example grep dep ./file.silly!
 ./file.silly!: Avoid implicit dependencies
 ```
 
-"./file.silly!" was replaced and preopend, and the program was able to open it.
+The path "./file.silly!" was substituted, and the program was able to open it.
 
 Conversely, an argument might be interpreted as a filename when it is
 not. Prefixing an argument with `%verbatim:` makes the remainder of the
@@ -69,11 +69,11 @@ argument a verbatim argument, even if it looks like a path:
 $ cargo run --quiet --example grep dep %verbatim:./Cargo.toml
 >>> external args: ["dep", "%verbatim:./Cargo.toml"]
 >>> internal args: ["dep", "./Cargo.toml"]
-Error: cannot open file './Cargo.toml': Custom { kind: PermissionDenied, error: "File is not available as a preopen" }
+[ERROR stderr] Error: cannot open file './Cargo.toml': File is not available
 ```
 
 Here, "./Cargo.toml" is passed through verbatim, though it cannot be
-opened as such because it's not preopened.
+opened as such because it's not replaced.
 
 `%` at the beginning of an argument is reserved for special features.
  - `%verbatim:` suppresses all inference and passes the rest of the string through as-is.

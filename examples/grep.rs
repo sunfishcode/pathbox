@@ -1,4 +1,4 @@
-use preopener::{exit, Level, MagicLevel, Preopener, Status};
+use pathbox::{exit, Level, MagicLevel, Pathbox, Status};
 use std::io;
 use std::io::{BufRead, Write};
 
@@ -13,8 +13,8 @@ fn main() {
     // Print out the arguments before translation.
     eprintln!(">>> external args: {:?}", args);
 
-    let mut preopener = Preopener::new(MagicLevel::Auto);
-    let args = preopener.process_args_os(args.into_iter()).unwrap();
+    let mut pathbox = Pathbox::new(MagicLevel::Auto);
+    let args = pathbox.process_args_os(args.into_iter()).unwrap();
 
     // Print out the arguments after translation.
     eprintln!(">>> internal args: {:?}", args);
@@ -34,19 +34,19 @@ fn main() {
 
     // Open the remaining arguments and search for the string.
     for arg in args {
-        match preopener.open(arg) {
+        match pathbox.open(arg) {
             Ok(f) => {
                 for line in io::BufReader::new(f).lines() {
                     let line = line.unwrap();
                     // A real grep would use a regex here ¯\_(ツ)_/¯.
                     if line.contains(what) {
-                        writeln!(&mut preopener.stdout(), "{}: {}", arg, line).unwrap();
+                        writeln!(&mut pathbox.stdout(), "{}: {}", arg, line).unwrap();
                     }
                 }
             }
             Err(e) => {
                 // Use `log` instead of stderr.
-                preopener.log(
+                pathbox.log(
                     Level::Error,
                     "stderr",
                     &format!("Error: cannot open file '{}': {}", arg, e),
