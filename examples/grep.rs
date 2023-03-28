@@ -34,7 +34,7 @@ fn main() {
 
     // Open the remaining arguments and search for the string.
     for arg in args {
-        match preopener.open(&arg) {
+        match preopener.open(arg) {
             Ok(f) => {
                 for line in io::BufReader::new(f).lines() {
                     let line = line.unwrap();
@@ -49,7 +49,7 @@ fn main() {
                 preopener.log(
                     Level::Error,
                     "stderr",
-                    &format!("Error: cannot open file '{}': {:?}", arg, e),
+                    &format!("Error: cannot open file '{}': {}", arg, e),
                 );
                 exit(Status::Failure);
             }

@@ -1,10 +1,11 @@
 use crate::{log, Level, Writer};
-use dir_view::{ambient_authority, DirView, ViewKind};
+use cap_std::fs::{File, OpenOptions};
+use dir_view::{ambient_authority, cap_std, DirView, ViewKind};
 #[cfg(unix)]
 use std::ffi::OsStr;
 use std::ffi::OsString;
-use std::fs::{File, OpenOptions};
 use std::io;
+use std::path::PathBuf;
 
 /// The level of path inference that should be performed.
 ///
@@ -51,6 +52,12 @@ impl Preopener {
         }
     }
 
+    /// Add the given command-line argument to the environment, and return a
+    /// translated argument.
+    pub fn process_arg(&mut self, arg: String) -> Result<String, Error> {
+        self.process(arg)
+    }
+
     /// Add the given command-line arguments to the environment, and return a
     /// translated list of arguments.
     pub fn process_args(
@@ -59,9 +66,15 @@ impl Preopener {
     ) -> Result<Vec<String>, Error> {
         let mut new_args = Vec::new();
         for arg in args {
-            new_args.push(self.process(arg)?);
+            new_args.push(self.process_arg(arg)?);
         }
         Ok(new_args)
+    }
+
+    /// Add the given command-line argument to the environment, and return a
+    /// translated argument.
+    pub fn process_arg_os(&mut self, arg: OsString) -> Result<String, Error> {
+        self.process_os(arg)
     }
 
     /// Add the given command-line arguments to the environment, and return a
@@ -72,9 +85,16 @@ impl Preopener {
     ) -> Result<Vec<String>, Error> {
         let mut new_args = Vec::new();
         for arg in args {
-            new_args.push(self.process_os(arg)?);
+            new_args.push(self.process_arg_os(arg)?);
         }
         Ok(new_args)
+    }
+
+    /// Add the given environment variable the environment, and return a
+    /// translated environment variable.
+    pub fn process_var(&mut self, env: (String, String)) -> Result<(String, String), Error> {
+        let (key, val) = env;
+        Ok((key, self.process(val)?))
     }
 
     /// Add the given environment variables the environment, and return a
@@ -84,10 +104,27 @@ impl Preopener {
         envs: impl Iterator<Item = (String, String)>,
     ) -> Result<Vec<(String, String)>, Error> {
         let mut new_envs = Vec::new();
-        for (key, val) in envs {
-            new_envs.push((key, self.process(val)?));
+        for env in envs {
+            let (key, val) = self.process_var(env)?;
+            new_envs.push((key, val));
         }
         Ok(new_envs)
+    }
+
+    /// Add the given environment variable the environment, and return a
+    /// translated environment variable.
+    pub fn process_var_os(&mut self, env: (OsString, OsString)) -> Result<(String, String), Error> {
+        let (key, val) = env;
+        let key = match key.into_string() {
+            Ok(key) => key,
+            Err(ill) => {
+                return Err(Error(format!(
+                    "An environment variable name contains ill-formed Unicode: {:?}",
+                    ill
+                )))
+            }
+        };
+        Ok((key, self.process_os(val)?))
     }
 
     /// Add the given environment variables the environment, and return a
@@ -97,102 +134,65 @@ impl Preopener {
         envs: impl Iterator<Item = (OsString, OsString)>,
     ) -> Result<Vec<(String, String)>, Error> {
         let mut new_envs = Vec::new();
-        for (key, val) in envs {
-            let key = match key.into_string() {
-                Ok(key) => key,
-                Err(ill) => {
-                    return Err(Error(format!(
-                        "An environment variable name contains ill-formed Unicode: {:?}",
-                        ill
-                    )))
-                }
-            };
-            new_envs.push((key, self.process_os(val)?));
+        for env in envs {
+            let (key, val) = self.process_var_os(env)?;
+            new_envs.push((key, val));
         }
         Ok(new_envs)
     }
 
     /// Open a file given an internal filename.
-    pub fn open(&self, path: &str) -> io::Result<File> {
+    ///
+    /// This function does no actual I/O; it just looks up the path and
+    /// returns the translated path that can be opened with ambient
+    /// authority.
+    pub fn host_path(&self, path: &str, access: Access) -> io::Result<PathBuf> {
         for preopen in &self.preopens {
-            if !matches!(preopen.access, Access::Read | Access::Any) {
+            if preopen.access != Access::Any && !preopen.access.includes(access) {
                 continue;
             }
-            if let Some(rest) = path.strip_prefix(&preopen.uuid) {
+            if let Some(rest) = path.strip_prefix(&preopen.guest) {
                 let mut path = preopen.original.clone();
                 path.push(rest);
-                return File::open(path);
+                return Ok(path.into());
             }
         }
 
         Err(self.preopen_search_failed(path))
+    }
+
+    /// Open a file given an internal filename.
+    pub fn open(&self, path: &str) -> io::Result<File> {
+        let full_path = self.host_path(path, Access::Read)?;
+        File::open_ambient(&full_path, ambient_authority())
     }
 
     /// Create a file given an internal filename.
     pub fn create(&self, path: &str) -> io::Result<File> {
-        for preopen in &self.preopens {
-            if !matches!(preopen.access, Access::Write | Access::Any) {
-                continue;
-            }
-            if let Some(rest) = path.strip_prefix(&preopen.uuid) {
-                let mut path = preopen.original.clone();
-                path.push(rest);
-                return File::create(path);
-            }
-        }
-
-        Err(self.preopen_search_failed(path))
+        let full_path = self.host_path(path, Access::Write)?;
+        File::create_ambient(&full_path, ambient_authority())
     }
 
     /// Open a file for appending given an internal filename.
     pub fn append(&self, path: &str) -> io::Result<File> {
-        for preopen in &self.preopens {
-            if !matches!(preopen.access, Access::Append | Access::Any) {
-                continue;
-            }
-            if let Some(rest) = path.strip_prefix(&preopen.uuid) {
-                let mut path = preopen.original.clone();
-                path.push(rest);
-                return OpenOptions::new().append(true).open(path);
-            }
-        }
-
-        Err(self.preopen_search_failed(path))
+        let full_path = self.host_path(path, Access::Append)?;
+        File::open_ambient_with(
+            &full_path,
+            OpenOptions::new().append(true),
+            ambient_authority(),
+        )
     }
 
     /// Open a directory given an internal filename.
     pub fn open_dir(&self, path: &str) -> io::Result<DirView> {
-        for preopen in &self.preopens {
-            if !matches!(
-                preopen.access,
-                Access::MutableDir | Access::ReadonlyDir | Access::Any
-            ) {
-                continue;
-            }
-            if let Some(rest) = path.strip_prefix(&preopen.uuid) {
-                let mut path = preopen.original.clone();
-                path.push(rest);
-                return DirView::open_ambient_dir(path, ViewKind::Readonly, ambient_authority());
-            }
-        }
-
-        Err(self.preopen_search_failed(path))
+        let full_path = self.host_path(path, Access::ReadonlyDir)?;
+        DirView::open_ambient_dir(&full_path, ViewKind::Readonly, ambient_authority())
     }
 
     /// Open a mutable directory given an internal filename.
     pub fn open_mutable_dir(&self, path: &str) -> io::Result<DirView> {
-        for preopen in &self.preopens {
-            if !matches!(preopen.access, Access::MutableDir | Access::Any) {
-                continue;
-            }
-            if let Some(rest) = path.strip_prefix(&preopen.uuid) {
-                let mut path = preopen.original.clone();
-                path.push(rest);
-                return DirView::open_ambient_dir(path, ViewKind::Full, ambient_authority());
-            }
-        }
-
-        Err(self.preopen_search_failed(path))
+        let full_path = self.host_path(path, Access::MutableDir)?;
+        DirView::open_ambient_dir(&full_path, ViewKind::Full, ambient_authority())
     }
 
     fn preopen_search_failed(&self, path: &str) -> io::Error {
@@ -206,12 +206,12 @@ impl Preopener {
                 Access::MutableDir => "read/write directory",
                 Access::Any => continue,
             };
-            if let Some(_rest) = path.strip_prefix(&preopen.uuid) {
+            if let Some(_rest) = path.strip_prefix(&preopen.guest) {
                 return io::Error::new(
                     io::ErrorKind::PermissionDenied,
                     format!(
                         "Preopen '{:?}' only permits {:?} access",
-                        preopen.original, access
+                        preopen.guest, access
                     ),
                 );
             }
@@ -331,9 +331,8 @@ impl Preopener {
                     if !prefix.contains('/') && is_likely_path(suffix) {
                         // No slash before the '=' and a slash after; treat it as
                         // a `--input=/path/to/file.txt` case and replace the path part.
-                        return Ok(
-                            prefix.to_owned() + &self.replace_with_uuid(suffix, default_access)
-                        );
+                        let path = self.replace_with_uuid(suffix, default_access);
+                        return Ok(prefix.to_owned() + &path);
                     }
                 }
 
@@ -347,26 +346,28 @@ impl Preopener {
     }
 
     fn replace_with_uuid(&mut self, s: &str, access: Access) -> String {
-        let (base, ext) = split_extension(s);
+        let (_base, ext) = split_extension(s);
 
-        let uuid = format!("wasi-preopen.{}", uuid::Uuid::new_v4());
-        self.preopens.push(Preopen {
-            uuid: uuid.clone(),
-            original: base.to_owned().into(),
+        let guest = format!("wasi-preopen.{}{}", uuid::Uuid::new_v4(), ext);
+        let preopen = Preopen {
+            guest: guest.clone(),
+            original: s.to_owned().into(),
             access,
-        });
-        uuid + ext
+        };
+        self.preopens.push(preopen);
+        guest
     }
 
     #[cfg(unix)]
     fn replace_os_with_uuid(&mut self, s: &OsStr, access: Access) -> String {
-        let uuid = format!("wasi-preopen.{}", uuid::Uuid::new_v4());
-        self.preopens.push(Preopen {
-            uuid: uuid.clone(),
+        let guest = format!("wasi-preopen.{}", uuid::Uuid::new_v4());
+        let preopen = Preopen {
+            guest: guest.clone(),
             original: s.to_owned(),
             access,
-        });
-        uuid
+        };
+        self.preopens.push(preopen);
+        guest
     }
 
     pub(crate) fn as_slice(&self) -> &[Preopen] {
@@ -393,20 +394,20 @@ impl std::fmt::Display for Error {
 
 /// A record of a name which has been replaced.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Preopen {
+pub struct Preopen {
     /// The replacement string.
-    pub(crate) uuid: String,
+    pub guest: String,
 
-    /// The original string.
-    pub(crate) original: OsString,
+    /// The preopened resource.
+    pub original: OsString,
 
     /// How the file may be accessed.
-    pub(crate) access: Access,
+    pub access: Access,
 }
 
 /// What types of file access should be permitted?
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Access {
+pub enum Access {
     /// Allow read-only operations.
     Read,
     /// Allow writing, creating, and truncating files.
@@ -419,6 +420,12 @@ pub(crate) enum Access {
     MutableDir,
     /// Allow any access to files.
     Any,
+}
+
+impl Access {
+    pub fn includes(&self, other: Self) -> bool {
+        *self == other || (*self == Access::MutableDir && other == Access::ReadonlyDir)
+    }
 }
 
 /// If `s` is a path ending with a basename extension, split it into the
@@ -489,8 +496,8 @@ fn is_never_extension(c: char) -> bool {
         || c == char::REPLACEMENT_CHARACTER
 }
 
-/// Test whether `c` is a suspicious shell metacharacter which is unlikely to be
-/// worth assuming participates in a filename.
+/// Test whether `c` is a suspicious shell metacharacter which is unlikely to
+/// be worth assuming participates in a filename.
 fn is_suspicious_shell_metacharacter(c: char) -> bool {
     // On Windows, backslash is a path separator.
     #[cfg(windows)]
@@ -513,8 +520,8 @@ fn is_suspicious_shell_metacharacter(c: char) -> bool {
 ///
 ///  - If it starts with a `-`, assume it's not a path.
 ///  - If it contains a `/`, assume it is a path.
-///  - If it ends with a conventional-looking filename extension, or it looks like
-///    a dotile, assume it is a path.
+///  - If it ends with a conventional-looking filename extension, or it looks
+///    like a dotile, assume it is a path.
 ///  - Otherwise, assume it isn't.
 ///
 /// There are also a few additional heuristics for rare situations.
@@ -915,7 +922,7 @@ mod test {
         for arg in args {
             let p = do_process_os(OsStr::from_bytes(arg)).unwrap();
             assert_eq!(p.preopens.len(), 1);
-            assert_eq!(p.arg, p.preopens[0].uuid);
+            assert_eq!(p.arg, p.preopens[0].guest);
             assert_eq!(p.preopens[0].original, OsStr::from_bytes(arg));
         }
     }
@@ -1004,7 +1011,7 @@ mod test {
         for arg in args {
             let p = do_process(arg).unwrap();
             assert_eq!(p.preopens.len(), 1);
-            assert_eq!(p.arg, p.preopens[0].uuid);
+            assert_eq!(p.arg, p.preopens[0].guest);
             assert_eq!(p.preopens[0].original, arg);
             assert_eq!(
                 do_process(&("%verbatim:".to_owned() + arg)),
@@ -1019,25 +1026,22 @@ mod test {
         assert_eq!(p.preopens.len(), 2);
         assert_eq!(
             p.arg,
-            format!("{}:{}", p.preopens[0].uuid, p.preopens[1].uuid)
+            format!("{}:{}", p.preopens[0].guest, p.preopens[1].guest)
         );
         assert_eq!(p.preopens[0].original, "/");
         assert_eq!(p.preopens[1].original, "/");
-        assert_eq!(
-            do_process(&("%verbatim:/:/".to_owned())),
-            Ok(Process::new("/:/", &[]))
-        );
+        assert_eq!(do_process("%verbatim:/:/"), Ok(Process::new("/:/", &[])));
 
         let p = do_process("./foo:./bar").unwrap();
         assert_eq!(p.preopens.len(), 2);
         assert_eq!(
             p.arg,
-            format!("{}:{}", p.preopens[0].uuid, p.preopens[1].uuid)
+            format!("{}:{}", p.preopens[0].guest, p.preopens[1].guest)
         );
         assert_eq!(p.preopens[0].original, "./foo");
         assert_eq!(p.preopens[1].original, "./bar");
         assert_eq!(
-            do_process(&("%verbatim:./foo:./bar".to_owned())),
+            do_process("%verbatim:./foo:./bar"),
             Ok(Process::new("./foo:./bar", &[]))
         );
     }
@@ -1059,7 +1063,7 @@ mod test {
             p.arg,
             format!(
                 "{}:{}:{}",
-                p.preopens[0].uuid, p.preopens[1].uuid, p.preopens[2].uuid
+                p.preopens[0].guest, p.preopens[1].guest, p.preopens[2].guest
             )
         );
     }
@@ -1070,7 +1074,7 @@ mod test {
         assert!(p.arg.starts_with("--input="));
         assert!(!p.arg.ends_with("/foo"));
         assert_eq!(p.preopens.len(), 1);
-        assert_eq!(p.arg, format!("--input={}", p.preopens[0].uuid));
+        assert_eq!(p.arg, format!("--input={}", p.preopens[0].guest));
         assert_eq!(p.preopens[0].original, "/foo");
         assert_eq!(
             do_process("%verbatim:--input=/foo"),

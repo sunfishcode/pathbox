@@ -1,6 +1,6 @@
 //! TODO: The implementation here is extremely primitive and unoptimized.
 
-use crate::Preopener;
+use crate::preopener::Preopener;
 use std::io;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
@@ -31,18 +31,22 @@ impl<'a> Writer<'a> {
     }
 
     fn replace_preopens(&mut self) {
-        for preopen in self.preopener.as_slice() {
-            while let Some((before, after)) = is_subsequence(preopen.uuid.as_bytes(), &self.buf) {
-                let after = self.buf[after..].to_vec();
-                self.buf.resize(before, 0);
+        if let Some((before, _after_prefix)) = is_subsequence(b"wasi-preopen.", &self.buf) {
+            for preopen in self.preopener.as_slice() {
+                let after_match = before + preopen.guest.len();
+                if self.buf.get(before..after_match) == Some(preopen.guest.as_bytes()) {
+                    let after = self.buf[after_match..].to_vec();
+                    self.buf.resize(before, 0);
 
-                #[cfg(unix)]
-                self.buf.extend_from_slice(preopen.original.as_bytes());
-                #[cfg(not(unix))]
-                self.buf
-                    .extend_from_slice(preopen.original.as_os_str().to_str().unwrap().as_bytes());
+                    #[cfg(unix)]
+                    self.buf.extend_from_slice(preopen.original.as_bytes());
+                    #[cfg(not(unix))]
+                    self.buf.extend_from_slice(
+                        preopen.original.as_os_str().to_str().unwrap().as_bytes(),
+                    );
 
-                self.buf.extend_from_slice(&after);
+                    self.buf.extend_from_slice(&after);
+                }
             }
         }
     }

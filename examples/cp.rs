@@ -46,26 +46,26 @@ fn main() {
         }
     };
 
-    let mut input = match preopener.open(&src) {
+    let mut input = match preopener.open(src) {
         Ok(f) => f,
         Err(e) => {
             // Use `log` instead of stderr.
             preopener.log(
                 Level::Error,
                 "stderr",
-                &format!("Error: cannot open file '{}': {:?}", src, e),
+                &format!("Error: cannot open file '{}': {}", src, e),
             );
             exit(Status::Failure);
         }
     };
-    let mut output = match preopener.create(&dst) {
+    let mut output = match preopener.create(dst) {
         Ok(f) => f,
         Err(e) => {
             // Use `log` instead of stderr.
             preopener.log(
                 Level::Error,
                 "stderr",
-                &format!("Error: cannot open file '{}': {:?}", dst, e),
+                &format!("Error: cannot open file '{}': {}", dst, e),
             );
             exit(Status::Failure);
         }

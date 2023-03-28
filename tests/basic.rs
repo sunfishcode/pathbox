@@ -23,8 +23,8 @@ fn copy() {
     let output_name = &args[1];
 
     // The real names are hidden.
-    assert!(!input_name.contains(&real_input_name.to_str().unwrap()));
-    assert!(!output_name.contains(&real_output_name.to_str().unwrap()));
+    assert!(!input_name.contains(real_input_name.to_str().unwrap()));
+    assert!(!output_name.contains(real_output_name.to_str().unwrap()));
 
     let mut input = preopener.open(input_name).unwrap();
     let mut output = preopener.create(output_name).unwrap();
@@ -59,8 +59,8 @@ fn copy_fail_no_magic() {
     let output_name = &args[1];
 
     // The real names are not hidden.
-    assert!(input_name.contains(&real_input_name.to_str().unwrap()));
-    assert!(output_name.contains(&real_output_name.to_str().unwrap()));
+    assert!(input_name.contains(real_input_name.to_str().unwrap()));
+    assert!(output_name.contains(real_output_name.to_str().unwrap()));
 
     // Everything fails.
     assert_eq!(
@@ -94,8 +94,8 @@ fn copy_fail_no_writeability() {
     let output_name = &args[1];
 
     // The real names are hidden.
-    assert!(!input_name.contains(&real_input_name.to_str().unwrap()));
-    assert!(!output_name.contains(&real_output_name.to_str().unwrap()));
+    assert!(!input_name.contains(real_input_name.to_str().unwrap()));
+    assert!(!output_name.contains(real_output_name.to_str().unwrap()));
 
     // In readonly mode we can open the input but opening the output fails.
     let _input = preopener.open(input_name).unwrap();
